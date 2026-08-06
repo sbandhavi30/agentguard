@@ -2,7 +2,7 @@ import json
 from collections.abc import Callable, Awaitable
 from datetime import datetime, timezone
 from agentguard.core.engine import CheckpointEngine
-from agentguard.core.exceptions import DeserializationError
+from agentguard.core.exceptions import AgentLoopDetectedError, DeserializationError
 from agentguard.core.store import StorageBackend
 from agentguard.core.triggers import TriggerMeta, TriggerPolicy
 from agentguard.core.types import CheckpointMeta
@@ -18,7 +18,9 @@ class DurableAgentLoop:
         policy: TriggerPolicy | None = None,
         framework_name: str = "anthropic",
         on_checkpoint_failure: Callable[[str, int, Exception], None] | None = None,
+        max_steps: int | None = None,
     ) -> None:
+        self._max_steps = max_steps
         self._client = client
         self._engine = CheckpointEngine(
             store=store,
@@ -79,6 +81,10 @@ class DurableAgentLoop:
                 state_bytes = self._serialize(current_messages, step)
                 meta = await self._make_meta(run_id, step, token_count, trigger_reason)
                 await self._engine.checkpoint(run_id, step, state_bytes, meta)
+
+                # Loop detection: checkpoint is already saved, safe to raise.
+                if self._max_steps is not None and step >= self._max_steps:
+                    raise AgentLoopDetectedError(run_id=run_id, step=step)
 
                 if not tool_executor:
                     # No executor: surface the response to the caller rather than

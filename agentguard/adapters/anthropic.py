@@ -1,5 +1,5 @@
+import json
 import logging
-import pickle
 from collections.abc import Callable, Awaitable
 from datetime import datetime, timezone
 from agentguard.core.engine import CheckpointEngine
@@ -31,16 +31,11 @@ class DurableAgentLoop:
         self._framework = framework_name
 
     def _serialize(self, messages: list, step: int) -> bytes:
-        return pickle.dumps({"messages": messages, "step": step})
+        return json.dumps({"messages": messages, "step": step}).encode("utf-8")
 
     def _deserialize(self, state: bytes) -> dict:
-        # State bytes are written exclusively by _serialize() in this class (via
-        # CheckpointEngine) and are never accepted from external / network sources.
-        # The trust boundary is the storage backend, which is caller-supplied and
-        # assumed to be under the operator's control.  Using pickle here is safe
-        # within that threat model and is required by the task specification.
         try:
-            return pickle.loads(state)  # noqa: S301
+            return json.loads(state.decode("utf-8"))
         except Exception as exc:
             raise DeserializationError(f"Failed to deserialize Anthropic state: {exc}") from exc
 
@@ -88,8 +83,12 @@ class DurableAgentLoop:
 
                     if tool_executor:
                         results = await tool_executor(block.name, block.input)
+                        content = [
+                            b.model_dump() if hasattr(b, "model_dump") else dict(vars(b))
+                            for b in response.content
+                        ]
                         current_messages = current_messages + [
-                            {"role": "assistant", "content": response.content},
+                            {"role": "assistant", "content": content},
                             {"role": "user", "content": results},
                         ]
                 step += 1

@@ -1,0 +1,6 @@
+langchain-aws>=0.2.0
+langchain-core>=0.3.0
+langgraph>=0.2.0
+boto3>=1.34.0
+numpy>=1.26.0
+agentguard @ git+https://github.com/sbandhavi30/agentguard.git

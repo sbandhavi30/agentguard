@@ -1,5 +1,4 @@
 import pytest
-import tempfile
 from pathlib import Path
 from datetime import datetime, timezone
 from agentguard.stores.disk import DiskStore

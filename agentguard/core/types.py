@@ -1,12 +1,19 @@
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
 
 
 @dataclass(frozen=True)
 class CheckpointMeta:
-    pass
+    run_id: str
+    step: int
+    trigger: str
+    timestamp: datetime
+    framework: str
+    token_count: int = 0
+    cost_usd: float = 0.0
 
 
 @dataclass(frozen=True)
 class RestoredState:
-    pass
+    step: int
+    state: bytes

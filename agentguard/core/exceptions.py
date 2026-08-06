@@ -1,18 +1,18 @@
 class AgentGuardError(Exception):
-    pass
+    """Base class for all AgentGuard errors."""
 
 
 class CheckpointWriteError(AgentGuardError):
-    pass
+    """Storage backend failed to save checkpoint."""
 
 
 class RestoreError(AgentGuardError):
-    pass
+    """No checkpoint found or checkpoint bytes corrupted."""
 
 
 class DeserializationError(AgentGuardError):
-    pass
+    """Adapter failed to deserialize state bytes back to framework state."""
 
 
 class BackendConnectionError(AgentGuardError):
-    pass
+    """Storage backend unreachable."""

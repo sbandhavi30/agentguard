@@ -1,9 +1,18 @@
 import json
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 from agentguard.core.store import StorageBackend
 from agentguard.core.types import CheckpointMeta, RestoredState
+
+_SAFE_RUN_ID = re.compile(r'^[a-zA-Z0-9_\-]+$')
+
+
+def _validate_run_id(run_id: str) -> None:
+    """Reject run_ids that could escape the store root via path traversal."""
+    if not _SAFE_RUN_ID.match(run_id):
+        raise ValueError(f"Invalid run_id {run_id!r}: only [a-zA-Z0-9_-] allowed")
 
 
 class DiskStore(StorageBackend):
@@ -20,6 +29,7 @@ class DiskStore(StorageBackend):
         return self._run_dir(run_id) / f"step_{step:05d}.bin"
 
     async def save(self, run_id: str, step: int, state: bytes, meta: CheckpointMeta) -> None:
+        _validate_run_id(run_id)
         run_dir = self._run_dir(run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
         self._step_path(run_id, step).write_bytes(state)
@@ -35,6 +45,7 @@ class DiskStore(StorageBackend):
             }) + "\n")
 
     async def load_latest(self, run_id: str) -> RestoredState | None:
+        _validate_run_id(run_id)
         metas = await self.list(run_id)
         if not metas:
             return None
@@ -43,6 +54,7 @@ class DiskStore(StorageBackend):
         return RestoredState(step=latest.step, state=state)
 
     async def list(self, run_id: str) -> list[CheckpointMeta]:
+        _validate_run_id(run_id)
         meta_path = self._meta_path(run_id)
         if not meta_path.exists():
             return []
@@ -68,11 +80,13 @@ class DiskStore(StorageBackend):
         return sorted(metas, key=lambda m: m.step, reverse=True)
 
     async def delete(self, run_id: str) -> None:
+        _validate_run_id(run_id)
         run_dir = self._run_dir(run_id)
         if run_dir.exists():
             shutil.rmtree(run_dir)
 
     async def prune(self, run_id: str, keep_last: int = 3) -> None:
+        _validate_run_id(run_id)
         metas = await self.list(run_id)
         for meta in metas[keep_last:]:
             step_file = self._step_path(run_id, meta.step)

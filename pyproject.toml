@@ -7,15 +7,19 @@ name = "agentguard"
 version = "0.1.0"
 description = "Durable execution and checkpointing for AI agents"
 requires-python = ">=3.11"
-dependencies = ["typer>=0.12.0"]
+dependencies = []
 
 [project.optional-dependencies]
+# cli: required to use the `agentguard` CLI entry point.
+# Install with: pip install agentguard[cli]
+cli = ["typer>=0.12.0"]
 langgraph = ["langgraph>=0.1.0"]
 langchain = ["langchain-core>=0.2.0"]
 anthropic = ["anthropic>=0.30.0"]
 redis = ["redis>=5.0.0"]
 postgres = ["asyncpg>=0.29.0"]
 all = [
+    "agentguard[cli]",
     "agentguard[langgraph]",
     "agentguard[langchain]",
     "agentguard[anthropic]",

@@ -1,5 +1,4 @@
 import json
-import logging
 from collections.abc import Callable, Awaitable
 from datetime import datetime, timezone
 from agentguard.core.engine import CheckpointEngine
@@ -7,8 +6,6 @@ from agentguard.core.exceptions import DeserializationError
 from agentguard.core.store import StorageBackend
 from agentguard.core.triggers import TriggerMeta, TriggerPolicy
 from agentguard.core.types import CheckpointMeta
-
-logger = logging.getLogger(__name__)
 
 _TOTAL_BUDGET = 200_000  # Claude default context window
 
@@ -69,28 +66,40 @@ class DurableAgentLoop:
 
             if response.stop_reason == "tool_use":
                 tool_blocks = [b for b in response.content if b.type == "tool_use"]
-                for block in tool_blocks:
-                    trigger_meta = TriggerMeta(
-                        tool_name=block.name,
-                        token_count=token_count,
-                        total_budget=_TOTAL_BUDGET,
-                        step=step,
-                    )
-                    _, trigger_reason = self._engine.policy.should_checkpoint(trigger_meta)
-                    state_bytes = self._serialize(current_messages, step)
-                    meta = await self._make_meta(run_id, step, token_count, trigger_reason)
-                    await self._engine.checkpoint(run_id, step, state_bytes, meta)
 
-                    if tool_executor:
-                        results = await tool_executor(block.name, block.input)
-                        content = [
-                            b.model_dump() if hasattr(b, "model_dump") else dict(vars(b))
-                            for b in response.content
-                        ]
-                        current_messages = current_messages + [
-                            {"role": "assistant", "content": content},
-                            {"role": "user", "content": results},
-                        ]
+                # Checkpoint once per response (not once per block) to avoid duplicate
+                # entries when there are multiple tool_use blocks in a single response.
+                trigger_meta = TriggerMeta(
+                    tool_name=tool_blocks[0].name if tool_blocks else None,
+                    token_count=token_count,
+                    total_budget=_TOTAL_BUDGET,
+                    step=step,
+                )
+                _, trigger_reason = self._engine.policy.should_checkpoint(trigger_meta)
+                state_bytes = self._serialize(current_messages, step)
+                meta = await self._make_meta(run_id, step, token_count, trigger_reason)
+                await self._engine.checkpoint(run_id, step, state_bytes, meta)
+
+                if not tool_executor:
+                    # No executor: surface the response to the caller rather than
+                    # looping forever with the same messages.
+                    return response
+
+                # Execute all tool calls and collect all results.
+                all_results = []
+                for block in tool_blocks:
+                    results = await tool_executor(block.name, block.input)
+                    all_results.extend(results)
+
+                # Append the assistant turn and combined tool results exactly once.
+                content = [
+                    b.model_dump() if hasattr(b, "model_dump") else dict(vars(b))
+                    for b in response.content
+                ]
+                current_messages = current_messages + [
+                    {"role": "assistant", "content": content},
+                    {"role": "user", "content": all_results},
+                ]
                 step += 1
 
             else:

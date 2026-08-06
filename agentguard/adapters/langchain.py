@@ -50,7 +50,12 @@ class DurableExecutor:
         result = await self._executor.ainvoke(input_dict, **kwargs)
 
         step += 1
-        final_state_bytes = self._serialize({"result": result}, step)
+        try:
+            final_state_bytes = self._serialize({"result": result}, step)
+        except (TypeError, ValueError):
+            final_state_bytes = self._serialize(
+                {"result": None, "_serialization_failed": True}, step
+            )
         final_meta = CheckpointMeta(
             run_id=run_id, step=step, trigger="completed",
             timestamp=datetime.now(tz=timezone.utc),

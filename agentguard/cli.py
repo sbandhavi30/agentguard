@@ -126,8 +126,9 @@ def resume(
         latest.framework,
         "# Unknown framework: {framework}\nawait adapter.resume('{run_id}')",
     )
-    # Use replace() instead of .format() to avoid KeyError if run_id contains braces
-    snippet = template.replace("{run_id}", run_id).replace("{framework}", latest.framework)
+    # Substitute {framework} before {run_id} so a run_id that literally contains
+    # "{framework}" cannot collide with the framework placeholder.
+    snippet = template.replace("{framework}", latest.framework).replace("{run_id}", run_id)
     typer.echo(f"Detected framework: {latest.framework}")
     typer.echo(f"Latest checkpoint: step {latest.step} ({latest.timestamp.isoformat()})")
     typer.echo("\nResume with:\n")

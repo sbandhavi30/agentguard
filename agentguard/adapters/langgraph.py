@@ -1,4 +1,4 @@
-import pickle
+import json
 from collections.abc import Callable
 from datetime import datetime, timezone
 from agentguard.core.engine import CheckpointEngine
@@ -26,11 +26,11 @@ class DurableGraph:
         self._framework = framework_name
 
     def _serialize(self, input_dict: dict, step: int) -> bytes:
-        return pickle.dumps({"input": input_dict, "step": step})
+        return json.dumps({"input": input_dict, "step": step}).encode("utf-8")
 
     def _deserialize(self, state: bytes) -> dict:
         try:
-            return pickle.loads(state)  # noqa: S301
+            return json.loads(state.decode("utf-8"))
         except Exception as exc:
             raise DeserializationError(f"Failed to deserialize LangGraph state: {exc}") from exc
 

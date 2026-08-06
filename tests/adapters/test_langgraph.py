@@ -1,6 +1,6 @@
-import pickle
+import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
 from agentguard.adapters.langgraph import DurableGraph
 from agentguard.stores.memory import InMemoryStore
@@ -37,7 +37,7 @@ async def test_ainvoke_returns_graph_result():
 @pytest.mark.asyncio
 async def test_resume_restores_and_reinvokes():
     store = InMemoryStore()
-    state = pickle.dumps({"input": {"task": "resumed task"}, "step": 3})
+    state = json.dumps({"input": {"task": "resumed task"}, "step": 3}).encode("utf-8")
     meta = CheckpointMeta(
         run_id="run-lg3", step=3, trigger="tool_call",
         timestamp=datetime(2026, 8, 5, tzinfo=timezone.utc),

@@ -1,4 +1,4 @@
-import pickle
+import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
@@ -62,7 +62,7 @@ async def test_resume_restores_from_checkpoint():
     store = InMemoryStore()
     # Pre-seed a checkpoint with serialized messages
     messages = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}]
-    state = pickle.dumps({"messages": messages, "step": 2})
+    state = json.dumps({"messages": messages, "step": 2}).encode("utf-8")
     from agentguard.core.types import CheckpointMeta
     meta = CheckpointMeta(
         run_id="run-a2", step=2, trigger="tool_call",

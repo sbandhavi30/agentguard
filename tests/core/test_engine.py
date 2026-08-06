@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from agentguard.core.engine import CheckpointEngine
 from agentguard.core.exceptions import RestoreError
-from agentguard.core.types import CheckpointMeta, RestoredState
+from agentguard.core.types import CheckpointMeta
 from agentguard.stores.memory import InMemoryStore
 
 
@@ -69,8 +69,6 @@ async def test_restore_raises_when_no_checkpoint():
 async def test_restore_raises_on_empty_state():
     store = InMemoryStore()
     # Manually seed corrupted checkpoint
-    from agentguard.core.types import CheckpointMeta
-    from datetime import datetime, timezone
     meta = CheckpointMeta(
         run_id="run-1", step=1, trigger="tool_call",
         timestamp=datetime(2026, 8, 5, tzinfo=timezone.utc),

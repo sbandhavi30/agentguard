@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import json
 from pathlib import Path
 
@@ -7,6 +8,28 @@ import typer
 from agentguard.stores.disk import DiskStore
 
 app = typer.Typer(help="AgentGuard — inspect and manage agent checkpoints")
+
+
+def _run_async(coro):
+    """Run a coroutine, even if called from within a running event loop.
+
+    asyncio.run() raises RuntimeError when an event loop is already running
+    (e.g. during pytest-asyncio tests). To keep CLI commands safe in all
+    contexts, offload to a dedicated thread that owns its own event loop.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None and loop.is_running():
+        # Running inside an existing event loop (e.g. pytest-asyncio): use a
+        # background thread with its own event loop so asyncio.run() works.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(asyncio.run, coro)
+            return fut.result()
+    else:
+        return asyncio.run(coro)
 
 _RESUME_SNIPPETS = {
     "anthropic": (
@@ -31,8 +54,8 @@ def _get_store(store_path: str) -> DiskStore:
     return DiskStore(base_dir=Path(store_path))
 
 
-@app.command()
-def list(
+@app.command(name="list")
+def list_checkpoints(
     run_id: str,
     store: str = typer.Option(
         str(Path.home() / ".agentguard"), help="Path to disk store"
@@ -40,7 +63,7 @@ def list(
 ) -> None:
     """List all checkpoints for a run."""
     s = _get_store(store)
-    metas = asyncio.run(s.list(run_id))
+    metas = _run_async(s.list(run_id))
     if not metas:
         typer.echo(f"No checkpoints found for run_id={run_id}")
         return
@@ -63,7 +86,7 @@ def inspect(
 ) -> None:
     """Inspect metadata for a specific checkpoint."""
     s = _get_store(store)
-    metas = asyncio.run(s.list(run_id))
+    metas = _run_async(s.list(run_id))
     match = next((m for m in metas if m.step == step), None)
     if match is None:
         typer.echo(f"No checkpoint at step={step} for run_id={run_id}")
@@ -93,15 +116,18 @@ def resume(
 ) -> None:
     """Print resume code snippet for a run (auto-detects framework)."""
     s = _get_store(store)
-    metas = asyncio.run(s.list(run_id))
+    metas = _run_async(s.list(run_id))
     if not metas:
         typer.echo(f"No checkpoints found for run_id={run_id}")
         raise typer.Exit(code=1)
+    # list() returns descending by step; metas[0] is latest
     latest = metas[0]
-    snippet = _RESUME_SNIPPETS.get(
+    template = _RESUME_SNIPPETS.get(
         latest.framework,
-        f"# Unknown framework: {latest.framework}\nawait adapter.resume('{run_id}')",
-    ).format(run_id=run_id)
+        "# Unknown framework: {framework}\nawait adapter.resume('{run_id}')",
+    )
+    # Use replace() instead of .format() to avoid KeyError if run_id contains braces
+    snippet = template.replace("{run_id}", run_id).replace("{framework}", latest.framework)
     typer.echo(f"Detected framework: {latest.framework}")
     typer.echo(f"Latest checkpoint: step {latest.step} ({latest.timestamp.isoformat()})")
     typer.echo("\nResume with:\n")
@@ -118,7 +144,7 @@ def prune(
 ) -> None:
     """Prune old checkpoints, keeping the last N."""
     s = _get_store(store)
-    asyncio.run(s.prune(run_id, keep_last=keep))
+    _run_async(s.prune(run_id, keep_last=keep))
     typer.echo(f"Pruned checkpoints for {run_id}, kept last {keep}.")
 
 
@@ -131,31 +157,24 @@ def delete(
 ) -> None:
     """Delete all checkpoints for a run."""
     s = _get_store(store)
-    asyncio.run(s.delete(run_id))
+    _run_async(s.delete(run_id))
     typer.echo(f"Deleted all checkpoints for run_id={run_id}")
 
 
-@app.command()
-def stats(
-    store: str = typer.Option(
-        str(Path.home() / ".agentguard"), help="Path to disk store"
-    ),
-) -> None:
-    """Show aggregate stats across all runs."""
+async def _stats_async(store: str) -> None:
+    """Async implementation of stats — gathers all list() calls without nested _run_async()."""
     base = Path(store)
     if not base.exists():
         typer.echo("No checkpoint store found.")
         return
-    total_runs = 0
+    s = _get_store(store)
+    run_dirs = [d for d in base.iterdir() if d.is_dir()]
+    all_metas = await asyncio.gather(*(s.list(d.name) for d in run_dirs))
+    total_runs = len(run_dirs)
     total_checkpoints = 0
     total_cost = 0.0
     triggers: dict[str, int] = {}
-    s = _get_store(store)
-    for run_dir in base.iterdir():
-        if not run_dir.is_dir():
-            continue
-        total_runs += 1
-        metas = asyncio.run(s.list(run_dir.name))
+    for metas in all_metas:
         total_checkpoints += len(metas)
         for m in metas:
             total_cost += m.cost_usd
@@ -166,3 +185,13 @@ def stats(
     if triggers:
         most_common = max(triggers, key=lambda k: triggers[k])
         typer.echo(f"Most common trigger: {most_common} ({triggers[most_common]})")
+
+
+@app.command()
+def stats(
+    store: str = typer.Option(
+        str(Path.home() / ".agentguard"), help="Path to disk store"
+    ),
+) -> None:
+    """Show aggregate stats across all runs."""
+    _run_async(_stats_async(store))

@@ -91,11 +91,14 @@ class DurableAgentLoop:
                     # looping forever with the same messages.
                     return response
 
-                # Execute all tool calls and collect all results.
+                # Execute all tool calls and stamp correct tool_use_id on each result.
                 all_results = []
                 for block in tool_blocks:
                     results = await tool_executor(block.name, block.input)
-                    all_results.extend(results)
+                    for r in results:
+                        if isinstance(r, dict) and r.get("type") == "tool_result":
+                            r = {**r, "tool_use_id": block.id}
+                        all_results.append(r)
 
                 # Append the assistant turn and combined tool results exactly once.
                 content = [

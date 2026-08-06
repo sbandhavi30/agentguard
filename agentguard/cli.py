@@ -196,3 +196,70 @@ def stats(
 ) -> None:
     """Show aggregate stats across all runs."""
     _run_async(_stats_async(store))
+
+
+_MAX_STEPS_GUIDE = [
+    {
+        "use_case": "Simple Q&A / single lookup",
+        "recommended": 3,
+        "reasoning": "One tool call to fetch, one to return. >3 = stuck.",
+    },
+    {
+        "use_case": "Research / web search loop",
+        "recommended": 10,
+        "reasoning": "Multiple searches + synthesis. Real agents finish in 4-6.",
+    },
+    {
+        "use_case": "Code generation + test loop",
+        "recommended": 15,
+        "reasoning": "Write → run tests → fix → re-run. Each iteration = 2-3 steps.",
+    },
+    {
+        "use_case": "Multi-step data pipeline",
+        "recommended": 20,
+        "reasoning": "Fetch → transform → validate → load, with retries.",
+    },
+    {
+        "use_case": "Autonomous agent (open-ended)",
+        "recommended": 50,
+        "reasoning": "Complex tasks with many sub-tasks. Monitor via checkpoints.",
+    },
+    {
+        "use_case": "Destructive / DB operations",
+        "recommended": 5,
+        "reasoning": "Should be short and surgical. Loop = something went wrong.",
+    },
+]
+
+
+@app.command(name="max-steps")
+def max_steps_guide(
+    use_case: str = typer.Argument(
+        None,
+        help="Filter by keyword (e.g. 'research', 'code', 'db'). Shows all if omitted.",
+    ),
+) -> None:
+    """Show recommended max_steps values for common agent use cases.
+
+    When an agent exceeds max_steps, AgentLoopDetectedError is raised AFTER
+    checkpointing — state is always saved before the raise so you can resume
+    with a corrective instruction injected into the conversation.
+    """
+    rows = _MAX_STEPS_GUIDE
+    if use_case:
+        kw = use_case.lower()
+        rows = [r for r in rows if kw in r["use_case"].lower() or kw in r["reasoning"].lower()]
+        if not rows:
+            typer.echo(f"No match for '{use_case}'. Showing all:\n")
+            rows = _MAX_STEPS_GUIDE
+
+    typer.echo(f"\n{'Use case':<35} {'max_steps':>10}   Reasoning")
+    typer.echo("─" * 78)
+    for r in rows:
+        typer.echo(f"{r['use_case']:<35} {r['recommended']:>10}   {r['reasoning']}")
+    typer.echo()
+    typer.echo("Rule of thumb:")
+    typer.echo("  Start conservative (5-10). Raise only if agent legitimately needs more steps.")
+    typer.echo("  Check what triggered checkpoints:  agentguard list <run_id>")
+    typer.echo("  If token_pressure fires before loop detection → context too large, lower max_steps.")
+    typer.echo("  Combine with TriggerPolicy(destructive_tools=[...]) for safety on destructive ops.")
